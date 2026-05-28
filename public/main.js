@@ -22,6 +22,18 @@ const nextPageBtn = document.getElementById("nextPageBtn");
 const pageInfo = document.getElementById("pageInfo");
 const listHintPanel = document.getElementById("listHintPanel");
 const listHintList = document.getElementById("listHintList");
+const siteNoticePanel = document.getElementById("siteNoticePanel");
+const siteNoticeList = document.getElementById("siteNoticeList");
+const searchTabBtn = document.getElementById("searchTabBtn");
+const historyTabBtn = document.getElementById("historyTabBtn");
+const searchTabContent = document.getElementById("searchTabContent");
+const historyTabContent = document.getElementById("historyTabContent");
+const historyList = document.getElementById("historyList");
+const clearHistoryBtn = document.getElementById("clearHistoryBtn");
+
+const SEARCH_HISTORY_STORAGE_KEY = "ocs.searchHistory.v1";
+const SEARCH_HISTORY_EXPIRE_MS = 7 * 24 * 60 * 60 * 1000;
+const SEARCH_HISTORY_MAX = 30;
 
 let currentTotal = 0;
 let currentAbortController = null;
@@ -30,6 +42,9 @@ let allResults = [];
 let currentPage = 1;
 let activeKeyword = "";
 let listHints = [];
+let searchHistory = [];
+let siteSearchDetectedMap = {};
+let siteResultNotices = [];
 
 function formatDate(date) {
   return date.toISOString().slice(0, 10);
@@ -52,15 +67,171 @@ function getSitesFromTextarea() {
     .filter(Boolean);
 }
 
+function setActiveTab(tabName) {
+  const showHistory = tabName === "history";
+  searchTabBtn.classList.toggle("active", !showHistory);
+  historyTabBtn.classList.toggle("active", showHistory);
+  searchTabBtn.setAttribute("aria-selected", String(!showHistory));
+  historyTabBtn.setAttribute("aria-selected", String(showHistory));
+  searchTabContent.classList.toggle("hidden", showHistory);
+  historyTabContent.classList.toggle("hidden", !showHistory);
+}
+
+function formatDateTime(timestamp) {
+  if (!Number.isFinite(timestamp)) {
+    return "-";
+  }
+  const date = new Date(timestamp);
+  if (Number.isNaN(date.getTime())) {
+    return "-";
+  }
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  const hour = String(date.getHours()).padStart(2, "0");
+  const minute = String(date.getMinutes()).padStart(2, "0");
+  return `${year}-${month}-${day} ${hour}:${minute}`;
+}
+
+function getSearchFingerprint(record) {
+  const sites = Array.isArray(record.sites) ? record.sites : [];
+  return JSON.stringify({
+    sites: sites.map((site) => String(site || "").trim()).filter(Boolean).sort(),
+    keyword: String(record.keyword || "").trim().toLowerCase(),
+    startDate: String(record.startDate || ""),
+    endDate: String(record.endDate || ""),
+    maxPagesPerSite: Number(record.maxPagesPerSite) || 120,
+    strictMode: Boolean(record.strictMode),
+  });
+}
+
+function readSearchHistory() {
+  try {
+    const raw = localStorage.getItem(SEARCH_HISTORY_STORAGE_KEY);
+    if (!raw) {
+      return [];
+    }
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (error) {
+    return [];
+  }
+}
+
+function persistSearchHistory() {
+  try {
+    localStorage.setItem(SEARCH_HISTORY_STORAGE_KEY, JSON.stringify(searchHistory));
+  } catch (error) {
+    // localStorage 可能因隐私模式或容量限制不可用，此时忽略持久化失败。
+  }
+}
+
+function pruneSearchHistory(records) {
+  const now = Date.now();
+  return records
+    .filter((item) => item && typeof item === "object")
+    .filter((item) => Number.isFinite(item.createdAt))
+    .filter((item) => now - item.createdAt <= SEARCH_HISTORY_EXPIRE_MS)
+    .sort((a, b) => b.createdAt - a.createdAt)
+    .slice(0, SEARCH_HISTORY_MAX);
+}
+
+function renderSearchHistory() {
+  historyList.innerHTML = "";
+  if (!searchHistory.length) {
+    const empty = document.createElement("li");
+    empty.className = "history-meta";
+    empty.textContent = "暂无历史记录";
+    historyList.appendChild(empty);
+    clearHistoryBtn.disabled = true;
+    return;
+  }
+
+  searchHistory.forEach((record) => {
+    const li = document.createElement("li");
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "history-item";
+
+    const main = document.createElement("div");
+    main.className = "history-main";
+    main.textContent = `关键词：${record.keyword || "-"}`;
+
+    const meta = document.createElement("div");
+    meta.className = "history-meta";
+    const siteCount = Array.isArray(record.sites) ? record.sites.length : 0;
+    const modeText = record.strictMode ? "严格模式" : "普通模式";
+    meta.textContent = `${formatDateTime(record.createdAt)} | ${siteCount} 个站点 | ${
+      record.startDate || "-"
+    } ~ ${record.endDate || "-"} | ${modeText}`;
+
+    btn.appendChild(main);
+    btn.appendChild(meta);
+    btn.addEventListener("click", () => {
+      const sites = Array.isArray(record.sites) ? record.sites : [];
+      sitesInput.value = sites.join("\n");
+      keywordInput.value = record.keyword || "";
+      startDateInput.value = record.startDate || "";
+      endDateInput.value = record.endDate || "";
+      maxPagesInput.value = String(Number(record.maxPagesPerSite) || 120);
+      strictModeInput.checked = Boolean(record.strictMode);
+      if (Number.isFinite(record.days)) {
+        daysInput.value = String(record.days);
+      }
+      setStatus("已填充历史搜索条件，可直接点击搜索");
+    });
+
+    li.appendChild(btn);
+    historyList.appendChild(li);
+  });
+
+  clearHistoryBtn.disabled = false;
+}
+
+function loadSearchHistory() {
+  const loaded = readSearchHistory();
+  searchHistory = pruneSearchHistory(loaded);
+  persistSearchHistory();
+  renderSearchHistory();
+}
+
+function saveSearchHistory(record) {
+  const incoming = {
+    sites: Array.isArray(record.sites)
+      ? record.sites.map((site) => String(site || "").trim()).filter(Boolean)
+      : [],
+    keyword: String(record.keyword || "").trim(),
+    startDate: String(record.startDate || ""),
+    endDate: String(record.endDate || ""),
+    maxPagesPerSite: Number(record.maxPagesPerSite) || 120,
+    strictMode: Boolean(record.strictMode),
+    days: Number(record.days) || 7,
+    createdAt: Date.now(),
+  };
+  if (!incoming.sites.length || !incoming.keyword || !incoming.startDate || !incoming.endDate) {
+    return;
+  }
+
+  const incomingFingerprint = getSearchFingerprint(incoming);
+  const deduped = searchHistory.filter((item) => getSearchFingerprint(item) !== incomingFingerprint);
+  searchHistory = pruneSearchHistory([incoming, ...deduped]);
+  persistSearchHistory();
+  renderSearchHistory();
+}
+
 function clearResults() {
   currentTotal = 0;
   allResults = [];
   listHints = [];
   currentPage = 1;
+  siteSearchDetectedMap = {};
+  siteResultNotices = [];
   resultList.innerHTML = "";
   resultSummary.textContent = "暂无结果";
   listHintList.innerHTML = "";
   listHintPanel.classList.add("hidden");
+  siteNoticeList.innerHTML = "";
+  siteNoticePanel.classList.add("hidden");
   updatePaginationControls();
   updateExportState();
 }
@@ -279,6 +450,33 @@ function addListHint(hint) {
   renderListHints();
 }
 
+function renderSiteResultNotices() {
+  siteNoticeList.innerHTML = "";
+  if (!siteResultNotices.length) {
+    siteNoticePanel.classList.add("hidden");
+    return;
+  }
+  siteResultNotices.forEach((item) => {
+    const li = document.createElement("li");
+    li.textContent = item.text;
+    siteNoticeList.appendChild(li);
+  });
+  siteNoticePanel.classList.remove("hidden");
+}
+
+function upsertSiteResultNotice(site, text) {
+  if (!site || !text) {
+    return;
+  }
+  const idx = siteResultNotices.findIndex((item) => item.site === site);
+  if (idx >= 0) {
+    siteResultNotices[idx].text = text;
+  } else {
+    siteResultNotices.push({ site, text });
+  }
+  renderSiteResultNotices();
+}
+
 function setStatus(message) {
   statusText.textContent = message;
 }
@@ -364,6 +562,16 @@ async function runSearch() {
     setStatus("请选择开始和结束日期");
     return;
   }
+
+  saveSearchHistory({
+    sites,
+    keyword,
+    startDate,
+    endDate,
+    maxPagesPerSite,
+    strictMode,
+    days: Number(daysInput.value),
+  });
 
   setSearchState(true);
   clearResults();
@@ -465,7 +673,19 @@ async function runSearch() {
           return;
         }
 
+        if (event.type === "site_search_status") {
+          siteSearchDetectedMap[event.site] = Boolean(event.detected);
+          return;
+        }
+
         if (event.type === "site_done") {
+          const hasSiteSearchResult = Boolean(siteSearchDetectedMap[event.site]);
+          if (!event.error) {
+            const tipText = hasSiteSearchResult
+              ? `站点 ${event.site}：以下是搜索结果`
+              : `站点 ${event.site}：以下结果为代码扫描的结果，建议进入网站再次查询～`;
+            upsertSiteResultNotice(event.site, tipText);
+          }
           if (event.error) {
             setStatus(`站点完成：${event.site}（失败：${event.error}）`);
           } else {
@@ -593,6 +813,16 @@ pageSizeSelect.addEventListener("change", () => {
 });
 exportScopeSelect.addEventListener("change", updateExportState);
 exportBtn.addEventListener("click", exportResultsToXlsx);
+searchTabBtn.addEventListener("click", () => setActiveTab("search"));
+historyTabBtn.addEventListener("click", () => setActiveTab("history"));
+clearHistoryBtn.addEventListener("click", () => {
+  searchHistory = [];
+  persistSearchHistory();
+  renderSearchHistory();
+  setStatus("已清空历史记录");
+});
 applyRecentDays(7);
+setActiveTab("search");
+loadSearchHistory();
 updatePaginationControls();
 updateExportState();

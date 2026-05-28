@@ -17,6 +17,39 @@ npm start
 
 浏览器打开 `http://localhost:3000`
 
+## 打包成 Windows exe（本地单机使用）
+
+### 方式 A：在 Windows 电脑上打包（推荐）
+
+1. 安装 [Node.js 18+](https://nodejs.org/)
+2. 在项目目录打开命令行，执行：
+
+```bash
+npm install
+npm run build:exe
+```
+
+或双击 `scripts/build-exe.bat`。
+
+产物：`dist/one-click-news-search.exe`
+
+### 方式 B：Mac 上通过 GitHub Actions 自动打包
+
+Mac 无法直接交叉编译 Windows exe。若代码已推到 GitHub，可在仓库 **Actions → Build Windows exe → Run workflow** 运行，完成后在 Artifacts 下载 exe。
+
+### 使用 exe
+
+双击后会：
+
+1. 在本机 `127.0.0.1:3000` 启动服务
+2. 自动打开默认浏览器进入页面
+
+说明：
+
+- exe 体积约 50–80MB（内置 Node 运行时）
+- 关闭命令行窗口即停止服务
+- 首次运行若 Windows 防火墙提示，选择允许本地访问即可
+
 ## 使用说明
 1. 在站点列表输入网站，或导入 Excel。
 2. 输入关键词（如“福建”）。

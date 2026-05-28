@@ -3,6 +3,8 @@ const axios = require("axios");
 const cheerio = require("cheerio");
 const dayjs = require("dayjs");
 const net = require("net");
+const path = require("path");
+const { exec } = require("child_process");
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -15,9 +17,123 @@ const MAX_KEYWORD_LENGTH = 80;
 const MAX_URL_LENGTH = 2048;
 const USER_AGENT =
   "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36";
+const SECOND_LEVEL_CN_SUFFIXES = new Set(["com", "gov", "org", "net", "edu"]);
+const COMMON_SITE_SEARCH_PATHS = [
+  "/irs-c-web/search.shtml",
+  "/search.shtml",
+  "/search.html",
+  "/search",
+  "/search/",
+  "/site/search",
+  "/was5/web/search",
+  "/so/search",
+  "/so",
+  "/s",
+];
+const COMMON_SITE_SEARCH_PARAM_KEYS = [
+  "q",
+  "keyword",
+  "searchWord",
+  "wd",
+  "key",
+  "query",
+  "qtext",
+];
+const SITE_SEARCH_MAX_ENTRIES = 6;
+const SITE_SEARCH_MAX_PAGES_PER_ENTRY_BASE = 15;
+const SITE_SEARCH_MAX_PAGES_PER_ENTRY_HARD_LIMIT = 40;
+const SPECIAL_SITE_SEARCH_FALLBACKS = {
+  "news.cctv.com": [
+    "https://search.cctv.com/search.php?qtext={keyword}&type=web",
+    "https://search.cctv.com/search.php?qtext={keyword}&type=news",
+    "https://search.cctv.com/index.php?qtext={keyword}",
+  ],
+  "news.cctv.cn": [
+    "https://search.cctv.com/search.php?qtext={keyword}&type=web",
+    "https://search.cctv.com/search.php?qtext={keyword}&type=news",
+    "https://search.cctv.com/index.php?qtext={keyword}",
+  ],
+  "www.cass.cn": [
+    "https://www.cass.cn/search?keyword={keyword}",
+    "https://www.cass.cn/search?searchWord={keyword}",
+    "https://www.cass.cn/was5/web/search?keyword={keyword}",
+    "https://cass.cn/search?keyword={keyword}",
+    "https://cass.cn/was5/web/search?keyword={keyword}",
+  ],
+  "www.cnsa.gov.cn": [
+    "https://www.cnsa.gov.cn/search?keyword={keyword}",
+    "https://www.cnsa.gov.cn/search?searchWord={keyword}",
+    "https://www.cnsa.gov.cn/was5/web/search?keyword={keyword}",
+    "https://cnsa.gov.cn/search?keyword={keyword}",
+    "https://cnsa.gov.cn/was5/web/search?keyword={keyword}",
+  ],
+  "www.customs.gov.cn": [
+    "https://www.customs.gov.cn/search?keyword={keyword}",
+    "https://www.customs.gov.cn/search?searchWord={keyword}",
+    "https://www.customs.gov.cn/irs-c-web/search.shtml?searchWord={keyword}",
+    "https://customs.gov.cn/search?keyword={keyword}",
+    "https://customs.gov.cn/irs-c-web/search.shtml?searchWord={keyword}",
+  ],
+  "www.mod.gov.cn": [
+    "https://www.mod.gov.cn/search?keyword={keyword}",
+    "https://www.mod.gov.cn/was5/web/search?keyword={keyword}",
+    "https://mod.gov.cn/search?keyword={keyword}",
+    "https://mod.gov.cn/was5/web/search?keyword={keyword}",
+    "https://www.mod.gov.cn/irs-c-web/search.shtml?searchWord={keyword}",
+  ],
+  "www.mof.gov.cn": [
+    "https://www.mof.gov.cn/search?keyword={keyword}",
+    "https://www.mof.gov.cn/search?searchWord={keyword}",
+    "https://www.mof.gov.cn/was5/web/search?keyword={keyword}",
+    "https://mof.gov.cn/search?keyword={keyword}",
+    "https://mof.gov.cn/was5/web/search?keyword={keyword}",
+  ],
+  "www.mofcom.gov.cn": [
+    "https://www.mofcom.gov.cn/search?keyword={keyword}",
+    "https://www.mofcom.gov.cn/was5/web/search?keyword={keyword}",
+    "https://www.mofcom.gov.cn/irs-c-web/search.shtml?searchWord={keyword}",
+    "https://mofcom.gov.cn/search?keyword={keyword}",
+    "https://mofcom.gov.cn/was5/web/search?keyword={keyword}",
+  ],
+  "www.mohurd.gov.cn": [
+    "https://www.mohurd.gov.cn/search?keyword={keyword}",
+    "https://www.mohurd.gov.cn/search?searchWord={keyword}",
+    "https://www.mohurd.gov.cn/was5/web/search?keyword={keyword}",
+    "https://mohurd.gov.cn/search?keyword={keyword}",
+    "https://mohurd.gov.cn/was5/web/search?keyword={keyword}",
+  ],
+  "www.moj.gov.cn": [
+    "https://www.moj.gov.cn/search?keyword={keyword}",
+    "https://www.moj.gov.cn/search?searchWord={keyword}",
+    "https://www.moj.gov.cn/was5/web/search?keyword={keyword}",
+    "https://moj.gov.cn/search?keyword={keyword}",
+    "https://moj.gov.cn/was5/web/search?keyword={keyword}",
+  ],
+  "www.mps.gov.cn": [
+    "https://www.mps.gov.cn/search?keyword={keyword}",
+    "https://www.mps.gov.cn/search?searchWord={keyword}",
+    "https://www.mps.gov.cn/was5/web/search?keyword={keyword}",
+    "https://mps.gov.cn/search?keyword={keyword}",
+    "https://mps.gov.cn/was5/web/search?keyword={keyword}",
+  ],
+  "www.mwr.gov.cn": [
+    "https://www.mwr.gov.cn/search?keyword={keyword}",
+    "https://www.mwr.gov.cn/search?searchWord={keyword}",
+    "https://www.mwr.gov.cn/was5/web/search?keyword={keyword}",
+    "https://mwr.gov.cn/search?keyword={keyword}",
+    "https://mwr.gov.cn/was5/web/search?keyword={keyword}",
+  ],
+  "www.sasac.gov.cn": [
+    "https://www.sasac.gov.cn/search?keyword={keyword}",
+    "https://www.sasac.gov.cn/search?searchWord={keyword}",
+    "https://www.sasac.gov.cn/was5/web/search?keyword={keyword}",
+    "https://sasac.gov.cn/search?keyword={keyword}",
+    "https://sasac.gov.cn/was5/web/search?keyword={keyword}",
+  ],
+};
 
 app.use(express.json({ limit: "1mb" }));
-app.use(express.static("public"));
+app.use(express.static(path.join(__dirname, "public")));
 app.use((_, res, next) => {
   res.setHeader("X-Content-Type-Options", "nosniff");
   res.setHeader("X-Frame-Options", "DENY");
@@ -708,6 +824,117 @@ function discoverAliasHosts($, currentUrl, allowedHosts) {
     });
 }
 
+function withKeywordForSearchUrl(rawUrl, keyword) {
+  try {
+    const target = new URL(rawUrl);
+    const keywordFieldNames = ["key", "keyword", "q", "query", "search", "wd", "searchword", "qtext"];
+    let hasKeywordField = false;
+    const currentParams = Array.from(target.searchParams.keys());
+    currentParams.forEach((name) => {
+      if (keywordFieldNames.includes(name.toLowerCase())) {
+        target.searchParams.set(name, keyword);
+        hasKeywordField = true;
+      }
+    });
+    if (!hasKeywordField) {
+      target.searchParams.set("q", keyword);
+    }
+    return target.toString();
+  } catch (error) {
+    return "";
+  }
+}
+
+function getRegistrableDomain(hostname) {
+  const lowered = String(hostname || "").toLowerCase();
+  const parts = lowered.split(".").filter(Boolean);
+  if (parts.length <= 2) {
+    return lowered;
+  }
+  const last = parts[parts.length - 1];
+  const secondLast = parts[parts.length - 2];
+  if (last === "cn" && parts.length >= 3 && SECOND_LEVEL_CN_SUFFIXES.has(secondLast)) {
+    return parts.slice(-3).join(".");
+  }
+  return parts.slice(-2).join(".");
+}
+
+function buildHostFallbackSearchUrls(currentUrl, keyword) {
+  const fallbackUrls = [];
+  const seen = new Set();
+  const pushUrl = (rawUrl) => {
+    const normalized = withKeywordForSearchUrl(rawUrl, keyword);
+    if (!normalized || seen.has(normalized)) {
+      return;
+    }
+    seen.add(normalized);
+    fallbackUrls.push(normalized);
+  };
+
+  try {
+    const base = new URL(currentUrl);
+    const host = base.hostname.toLowerCase();
+    const registrableDomain = getRegistrableDomain(host);
+
+    const specialFallbacks = [
+      ...(SPECIAL_SITE_SEARCH_FALLBACKS[host] || []),
+      ...(SPECIAL_SITE_SEARCH_FALLBACKS[registrableDomain] || []),
+      ...(SPECIAL_SITE_SEARCH_FALLBACKS[`www.${registrableDomain}`] || []),
+    ];
+    specialFallbacks.forEach((template) => {
+      const url = template.replaceAll("{keyword}", encodeURIComponent(keyword));
+      pushUrl(url);
+    });
+
+    // 特判兜底：新浪首页经常是独立搜索域名入口。
+    if (/(\.|^)sina\.com\.cn$/i.test(host)) {
+      const sinaSearch = new URL("https://search.sina.com.cn/");
+      sinaSearch.searchParams.set("q", keyword);
+      sinaSearch.searchParams.set("c", "news");
+      pushUrl(sinaSearch.toString());
+    }
+
+    // 特判兜底：外交部门户为固定搜索入口。
+    if (/(\.|^)fmprc\.gov\.cn$/i.test(host)) {
+      const fmprcSearch = new URL("https://www.fmprc.gov.cn/irs-c-web/search.shtml");
+      fmprcSearch.searchParams.set("code", "183dacbce8f");
+      fmprcSearch.searchParams.set("dataTypeId", "558");
+      fmprcSearch.searchParams.set("searchWord", keyword);
+      pushUrl(fmprcSearch.toString());
+    }
+    const hostCandidates = new Set([host]);
+    if (host.startsWith("www.")) {
+      hostCandidates.add(host.slice(4));
+    } else {
+      hostCandidates.add(`www.${host}`);
+    }
+    if (registrableDomain) {
+      hostCandidates.add(registrableDomain);
+      hostCandidates.add(`www.${registrableDomain}`);
+      hostCandidates.add(`search.${registrableDomain}`);
+      hostCandidates.add(`so.${registrableDomain}`);
+      hostCandidates.add(`s.${registrableDomain}`);
+    }
+
+    for (const candidateHost of hostCandidates) {
+      const candidateOrigin = `${base.protocol}//${candidateHost}`;
+      for (const path of COMMON_SITE_SEARCH_PATHS) {
+        const target = new URL(path, candidateOrigin);
+        pushUrl(target.toString());
+      }
+      for (const key of COMMON_SITE_SEARCH_PARAM_KEYS) {
+        const rootWithQuery = new URL(candidateOrigin);
+        rootWithQuery.searchParams.set(key, keyword);
+        pushUrl(rootWithQuery.toString());
+      }
+    }
+  } catch (error) {
+    return [];
+  }
+
+  return fallbackUrls;
+}
+
 function buildSiteSearchUrls($, currentUrl, keyword, allowedHosts) {
   const urls = new Set();
   const keywordTerms = getNormalizedKeywordTerms(keyword);
@@ -738,7 +965,7 @@ function buildSiteSearchUrls($, currentUrl, keyword, allowedHosts) {
           const type = ($(field).attr("type") || "").toLowerCase();
           const value = ($(field).attr("value") || "").trim();
           const lowerName = name.toLowerCase();
-          const keywordField = /(key|keyword|q|query|search|wd)/i.test(lowerName);
+          const keywordField = /(key|keyword|q|query|search|wd|searchword|qtext)/i.test(lowerName);
           if (keywordField) {
             hasKeywordField = true;
             params.set(name, keyword);
@@ -750,7 +977,7 @@ function buildSiteSearchUrls($, currentUrl, keyword, allowedHosts) {
         });
 
       if (!hasKeywordField) {
-        ["key", "keyword", "q"].forEach((name) => {
+        ["key", "keyword", "q", "searchWord", "qtext"].forEach((name) => {
           if (!params.has(name)) {
             params.set(name, keyword);
           }
@@ -764,29 +991,370 @@ function buildSiteSearchUrls($, currentUrl, keyword, allowedHosts) {
     }
   });
 
+  // 兜底：不少站点用“搜索链接 + 独立搜索域名”，不是表单提交。
+  $("a[href]").each((_, element) => {
+    const href = ($(element).attr("href") || "").trim();
+    if (!href) {
+      return;
+    }
+    if (
+      href.startsWith("javascript:") ||
+      href.startsWith("mailto:") ||
+      href.startsWith("#")
+    ) {
+      return;
+    }
+    try {
+      const absolute = new URL(href, currentUrl);
+      if (!isAllowedTraversalHost(absolute.hostname, allowedHosts)) {
+        return;
+      }
+      const anchorText = normalizePlainText($(element).text() || "");
+      const pathAndQuery = `${absolute.pathname}${absolute.search}`;
+      const looksLikeSearchEntry =
+        /search|sousuo|query|retrieve|find|so\/|\/so|s\.html\?/.test(pathAndQuery.toLowerCase()) ||
+        /search\./.test(absolute.hostname.toLowerCase()) ||
+        /(搜索|检索|search|搜)/i.test(anchorText);
+      if (!looksLikeSearchEntry) {
+        return;
+      }
+      const withKeyword = withKeywordForSearchUrl(absolute.toString(), keyword);
+      if (withKeyword) {
+        urls.add(withKeyword);
+      }
+    } catch (error) {
+      return;
+    }
+  });
+
+  const hostFallbackUrls = buildHostFallbackSearchUrls(currentUrl, keyword);
+  hostFallbackUrls.forEach((url) => urls.add(url));
+
   return Array.from(urls);
 }
 
-async function bootstrapLinksFromSiteSearch({ $, pageUrl, keyword, allowedHosts }) {
-  const searchUrls = buildSiteSearchUrls($, pageUrl, keyword, allowedHosts);
-  if (!searchUrls.length) {
+function collectFocusedArticleLinks($search, searchUrl, allowedHosts, keywordTerms) {
+  const resolveResultUrl = (href) => unwrapSearchResultUrl(href, searchUrl);
+
+  const focused = [];
+  $search("a[href]").each((_, element) => {
+    const href = ($search(element).attr("href") || "").trim();
+    if (!href || href.startsWith("#") || href.startsWith("javascript:") || href.startsWith("mailto:")) {
+      return;
+    }
+    try {
+      const absolute = resolveResultUrl(href);
+      if (isBlockedHost(absolute.hostname)) {
+        return;
+      }
+      if (!isAllowedTraversalHost(absolute.hostname, allowedHosts) || isSkippableLink(absolute)) {
+        return;
+      }
+      absolute.hash = "";
+      const normalized = absolute.toString();
+      const pathAndQuery = `${absolute.pathname}${absolute.search}`;
+      const anchorText = normalizePlainText($search(element).text());
+      const isArticleLike =
+        isDetailLikeUrlText(pathAndQuery) || /\/\d{4}\/\d{1,2}\/\d{1,2}\//.test(pathAndQuery);
+      if (!isArticleLike) {
+        return;
+      }
+      let score = 0;
+      if (keywordTerms.length && anchorText) {
+        if (keywordTerms.every((term) => anchorText.includes(term))) {
+          score += 20;
+        } else if (keywordTerms.some((term) => anchorText.includes(term))) {
+          score += 8;
+        }
+      }
+      if (/search\./i.test(absolute.hostname)) {
+        score -= 5;
+      }
+      if (/\/\d{4}\/\d{1,2}\/\d{1,2}\/.*\.s?html?$/i.test(absolute.pathname)) {
+        score += 12;
+      }
+      focused.push({ url: normalized, score });
+    } catch (error) {
+      return;
+    }
+  });
+
+  return Array.from(
+    focused.reduce((map, item) => {
+      const prev = map.get(item.url);
+      if (!prev || item.score > prev.score) {
+        map.set(item.url, item);
+      }
+      return map;
+    }, new Map()).values()
+  )
+    .sort((a, b) => b.score - a.score)
+    .map((item) => item.url);
+}
+
+function discoverSearchPaginationUrls($search, searchUrl, allowedHosts) {
+  const urls = new Set();
+  $search("a[href]").each((_, element) => {
+    const href = ($search(element).attr("href") || "").trim();
+    if (!href || href.startsWith("#") || href.startsWith("javascript:") || href.startsWith("mailto:")) {
+      return;
+    }
+    try {
+      const absolute = new URL(href, searchUrl);
+      if (isBlockedHost(absolute.hostname) || !isAllowedTraversalHost(absolute.hostname, allowedHosts)) {
+        return;
+      }
+      const text = normalizePlainText($search(element).text());
+      const pathAndQuery = `${absolute.pathname}${absolute.search}`.toLowerCase();
+      const looksLikePagination =
+        /下一页|下页|next|上一页|上页|prev|上一页|后一页/.test(text) ||
+        /^\d{1,3}$/.test(text) ||
+        /(?:^|[?&])(page|p|pn|curpage|currentpage|start|offset)=\d+/i.test(pathAndQuery);
+      const looksLikeSearchContext =
+        /search|query|sousuo|retrieve|find|\/so\b|\bso\//.test(pathAndQuery) ||
+        /(?:^|[?&])(q|keyword|searchword|wd|qtext)=/i.test(pathAndQuery);
+      if (!looksLikePagination || !looksLikeSearchContext) {
+        return;
+      }
+      absolute.hash = "";
+      urls.add(absolute.toString());
+    } catch (error) {
+      return;
+    }
+  });
+  return Array.from(urls);
+}
+
+function buildSearchPaginationByQuery(searchUrl) {
+  return buildSearchPaginationByQueryWithLimit(searchUrl, SITE_SEARCH_MAX_PAGES_PER_ENTRY_BASE);
+}
+
+function buildSearchPaginationByQueryWithLimit(searchUrl, pageLimit) {
+  const urls = [];
+  try {
+    const base = new URL(searchUrl);
+    const hasAnyKeywordParam = Array.from(base.searchParams.keys()).some((name) =>
+      /(q|keyword|searchword|wd|qtext)/i.test(name)
+    );
+    if (!hasAnyKeywordParam) {
+      return [];
+    }
+    const pageKeys = ["page", "p", "pn", "curpage", "currentpage"];
+    const existingPageKey =
+      Array.from(base.searchParams.keys()).find((name) => pageKeys.includes(name.toLowerCase())) || "page";
+    for (let i = 2; i <= pageLimit; i += 1) {
+      const next = new URL(base.toString());
+      next.searchParams.set(existingPageKey, String(i));
+      urls.push(next.toString());
+    }
+  } catch (error) {
     return [];
   }
+  return urls;
+}
 
-  const seeded = [];
-  for (const searchUrl of searchUrls.slice(0, 3)) {
+function getAdaptiveSiteSearchPageLimit(maxPagesPerSite) {
+  const scaled = Math.floor((Number(maxPagesPerSite) || DEFAULT_MAX_PAGES_PER_SITE) / 4);
+  return Math.max(
+    SITE_SEARCH_MAX_PAGES_PER_ENTRY_BASE,
+    Math.min(SITE_SEARCH_MAX_PAGES_PER_ENTRY_HARD_LIMIT, scaled)
+  );
+}
+
+function isLikelySearchResultUrl(inputUrl) {
+  try {
+    const parsed = new URL(inputUrl);
+    const path = (parsed.pathname || "").toLowerCase();
+    const queryKeys = Array.from(parsed.searchParams.keys()).map((k) => k.toLowerCase());
+    const hasSearchPath = /(search|sousuo|query|retrieve|find|so)/.test(path);
+    const hasSearchParams = queryKeys.some((key) =>
+      ["q", "wd", "keyword", "searchword", "query", "qtext", "page"].includes(key)
+    );
+    const detailLike = isDetailLikeUrlText(`${parsed.pathname}${parsed.search}`);
+    return (hasSearchPath && !detailLike) || (hasSearchPath && hasSearchParams);
+  } catch (error) {
+    return false;
+  }
+}
+
+function unwrapSearchResultUrl(href, baseUrl) {
+  const absolute = new URL(href, baseUrl);
+  const wrapperKeys = [
+    "targetpage",
+    "url",
+    "target",
+    "dest",
+    "destination",
+    "redirect",
+    "redirect_url",
+    "redirecturl",
+    "jump",
+    "jumpurl",
+    "to",
+    "u",
+    "ru",
+  ];
+  const tryDecodeToUrl = (value) => {
+    if (!value) {
+      return null;
+    }
+    const candidates = [value];
     try {
-      const searchHtml = await fetchHtml(searchUrl);
-      const $search = cheerio.load(searchHtml);
-      discoverAliasHosts($search, searchUrl, allowedHosts);
-      const links = extractCandidateLinks($search, searchUrl, allowedHosts, keyword);
-      seeded.push(...links.slice(0, 150));
+      candidates.push(decodeURIComponent(value));
+    } catch (error) {
+      // ignore decode error
+    }
+    for (const candidate of candidates) {
+      if (!/^https?:\/\//i.test(candidate)) {
+        continue;
+      }
+      try {
+        return new URL(candidate, baseUrl);
+      } catch (error) {
+        continue;
+      }
+    }
+    return null;
+  };
+
+  for (const key of wrapperKeys) {
+    const wrapped = absolute.searchParams.get(key);
+    const parsed = tryDecodeToUrl(wrapped);
+    if (parsed) {
+      return parsed;
+    }
+  }
+
+  for (const [key, value] of absolute.searchParams.entries()) {
+    if (!/(url|target|redirect|jump|dest|link)/i.test(key)) {
+      continue;
+    }
+    const parsed = tryDecodeToUrl(value);
+    if (parsed) {
+      return parsed;
+    }
+  }
+
+  return absolute;
+}
+
+function extractDirectSearchResults($search, searchUrl, allowedHosts, keywordTerms) {
+  const resolveResultUrl = (href) => unwrapSearchResultUrl(href, searchUrl);
+
+  const entries = [];
+  $search("a[href]").each((_, element) => {
+    const href = ($search(element).attr("href") || "").trim();
+    if (!href || href.startsWith("#") || href.startsWith("javascript:") || href.startsWith("mailto:")) {
+      return;
+    }
+    try {
+      const absolute = resolveResultUrl(href);
+      if (isBlockedHost(absolute.hostname) || !isAllowedTraversalHost(absolute.hostname, allowedHosts)) {
+        return;
+      }
+      if (isSkippableLink(absolute)) {
+        return;
+      }
+      absolute.hash = "";
+      const url = absolute.toString();
+      if (isLikelySearchResultUrl(url)) {
+        return;
+      }
+      const pathAndQuery = `${absolute.pathname}${absolute.search}`;
+      const rowText = normalizePlainText($search(element).closest("li,div,tr,article").text());
+      const looksLikeNewsUrl = /\/\d{4}\/\d{1,2}\/\d{1,2}\//.test(pathAndQuery);
+      const rowHasDate = /\d{4}[-/.年]\d{1,2}[-/.月]\d{1,2}/.test(rowText);
+      if (!isDetailLikeUrlText(pathAndQuery) && !looksLikeNewsUrl && !rowHasDate) {
+        return;
+      }
+      const title = ($search(element).text() || "").trim();
+      const mergedText = normalizePlainText(`${title} ${rowText} ${url}`);
+      if (keywordTerms.length && !keywordTerms.every((term) => mergedText.includes(term))) {
+        return;
+      }
+      const dateFromRow = parseDate(String(rowText || ""));
+      const dateFromUrl = extractDateFromUrl(url);
+      const publishedAt = dateFromRow || dateFromUrl || null;
+      entries.push({
+        title: title || "站内搜索命中",
+        url,
+        publishedAt,
+      });
+    } catch (error) {
+      return;
+    }
+  });
+
+  return Array.from(
+    entries.reduce((map, item) => {
+      if (!map.has(item.url)) {
+        map.set(item.url, item);
+      }
+      return map;
+    }, new Map()).values()
+  );
+}
+
+async function bootstrapLinksFromSiteSearch({ $, pageUrl, keyword, allowedHosts, maxPagesPerSite }) {
+  const searchUrls = buildSiteSearchUrls($, pageUrl, keyword, allowedHosts);
+  if (!searchUrls.length) {
+    return { seededLinks: [], directResults: [], pageLimitUsed: SITE_SEARCH_MAX_PAGES_PER_ENTRY_BASE };
+  }
+
+  const keywordTerms = getNormalizedKeywordTerms(keyword);
+  const pageLimit = getAdaptiveSiteSearchPageLimit(maxPagesPerSite);
+  const seeded = [];
+  const directResults = [];
+  for (const searchUrl of searchUrls.slice(0, SITE_SEARCH_MAX_ENTRIES)) {
+    try {
+      const visitedSearchPages = new Set();
+      const pendingSearchPages = [searchUrl, ...buildSearchPaginationByQueryWithLimit(searchUrl, pageLimit)];
+      while (pendingSearchPages.length && visitedSearchPages.size < pageLimit) {
+        const searchPageUrl = pendingSearchPages.shift();
+        if (!searchPageUrl || visitedSearchPages.has(searchPageUrl)) {
+          continue;
+        }
+        visitedSearchPages.add(searchPageUrl);
+
+        const searchHtml = await fetchHtml(searchPageUrl);
+        const $search = cheerio.load(searchHtml);
+        discoverAliasHosts($search, searchPageUrl, allowedHosts);
+        directResults.push(
+          ...extractDirectSearchResults($search, searchPageUrl, allowedHosts, keywordTerms)
+        );
+        const rankedFocused = collectFocusedArticleLinks($search, searchPageUrl, allowedHosts, keywordTerms);
+
+        if (rankedFocused.length) {
+          seeded.push(...rankedFocused.slice(0, 220));
+        } else {
+          const links = extractCandidateLinks($search, searchPageUrl, allowedHosts, keyword);
+          seeded.push(...links.slice(0, 150));
+        }
+
+        const discoveredPagination = discoverSearchPaginationUrls($search, searchPageUrl, allowedHosts);
+        for (const url of discoveredPagination) {
+          if (!visitedSearchPages.has(url) && !pendingSearchPages.includes(url)) {
+            pendingSearchPages.push(url);
+          }
+        }
+      }
     } catch (error) {
       continue;
     }
   }
 
-  return Array.from(new Set(seeded));
+  return {
+    seededLinks: Array.from(new Set(seeded)),
+    directResults: Array.from(
+      directResults.reduce((map, item) => {
+        if (!map.has(item.url)) {
+          map.set(item.url, item);
+        }
+        return map;
+      }, new Map()).values()
+    ),
+    pageLimitUsed: pageLimit,
+  };
 }
 
 function extractCandidateLinks($, currentUrl, allowedHosts, keyword) {
@@ -997,15 +1565,21 @@ async function searchOneSiteStream({
   try {
     const root = new URL(normalized);
     const allowedHosts = new Set([root.hostname]);
+    const registrableDomain = getRegistrableDomain(root.hostname);
+    if (registrableDomain && registrableDomain !== root.hostname) {
+      allowedHosts.add(registrableDomain);
+    }
     const initialSectionSeeds = buildSectionSeedUrls(normalized);
     const queue = [normalized, ...initialSectionSeeds];
     const queued = new Set(queue);
     const visited = new Set();
     const hintedListPages = new Set();
-    let searchBootstrapped = false;
+    let siteSearchSeededCount = 0;
+    let effectiveMaxPages = maxPages;
     const pendingSectionSeeds = new Set();
     let scannedPages = 0;
     let matchedCount = 0;
+    const emittedResultUrls = new Set();
 
     emit({
       type: "site_start",
@@ -1014,13 +1588,99 @@ async function searchOneSiteStream({
       message: `开始全站搜索：${normalized}`,
     });
 
+    try {
+      const homeHtml = await fetchHtml(normalized);
+      if (!shouldStop()) {
+        const $home = cheerio.load(homeHtml);
+        discoverAliasHosts($home, normalized, allowedHosts);
+        const siteSearchBundle = await bootstrapLinksFromSiteSearch({
+          $: $home,
+          pageUrl: normalized,
+          keyword,
+          allowedHosts,
+          maxPagesPerSite: maxPages,
+        });
+        const siteSearchSeeds = Array.isArray(siteSearchBundle?.seededLinks)
+          ? siteSearchBundle.seededLinks
+          : [];
+        const directSearchResults = Array.isArray(siteSearchBundle?.directResults)
+          ? siteSearchBundle.directResults
+          : [];
+        siteSearchSeededCount = siteSearchSeeds.length;
+        for (let i = siteSearchSeeds.length - 1; i >= 0; i -= 1) {
+          const seeded = siteSearchSeeds[i];
+          if (visited.has(seeded) || queued.has(seeded)) {
+            continue;
+          }
+          queue.unshift(seeded);
+          queued.add(seeded);
+        }
+        if (siteSearchSeeds.length) {
+          const denseSiteSearch = siteSearchSeeds.length >= 120 || directSearchResults.length >= 80;
+          const boostFactor = denseSiteSearch ? 2.4 : 1.8;
+          effectiveMaxPages = Math.min(
+            MAX_PAGES_HARD_LIMIT,
+            Math.max(maxPages, Math.floor(maxPages * boostFactor))
+          );
+          emit({
+            type: "search_seed_hint",
+            site: normalized,
+            seededCount: siteSearchSeeds.length,
+            pageLimitUsed:
+              Number(siteSearchBundle?.pageLimitUsed) || SITE_SEARCH_MAX_PAGES_PER_ENTRY_BASE,
+          });
+        }
+        for (const item of directSearchResults) {
+          if (!item || !item.url || emittedResultUrls.has(item.url)) {
+            continue;
+          }
+          if (!item.publishedAt || !isDateInRange(item.publishedAt, startDate, endDate)) {
+            continue;
+          }
+          emittedResultUrls.add(item.url);
+          matchedCount += 1;
+          emit({
+            type: "result",
+            item: {
+              site: normalized,
+              title: item.title || "站内搜索命中",
+              url: item.url,
+              publishedAt: dayjs(item.publishedAt).format("YYYY-MM-DD HH:mm:ss"),
+              snippet: "站内搜索直出结果",
+            },
+            scannedPages,
+            matchedCount,
+          });
+        }
+        emit({
+          type: "site_search_status",
+          site: normalized,
+          detected: siteSearchSeeds.length > 0,
+          seededCount: siteSearchSeeds.length,
+        });
+      }
+    } catch (error) {
+      emit({
+        type: "site_search_status",
+        site: normalized,
+        detected: false,
+        seededCount: 0,
+      });
+      // 站内搜索探测失败时降级为全站搜索。
+    }
+
     const deepSectionSeeds = await bootstrapSectionSeeds(normalized, allowedHosts, keyword);
-    for (let i = deepSectionSeeds.length - 1; i >= 0; i -= 1) {
-      const url = deepSectionSeeds[i];
+    const shouldAppendSectionSeeds = siteSearchSeededCount > 0;
+    const sectionSeedOrder = shouldAppendSectionSeeds ? deepSectionSeeds : [...deepSectionSeeds].reverse();
+    for (const url of sectionSeedOrder) {
       if (queued.has(url) || visited.has(url)) {
         continue;
       }
-      queue.unshift(url);
+      if (shouldAppendSectionSeeds) {
+        queue.push(url);
+      } else {
+        queue.unshift(url);
+      }
       queued.add(url);
       if (/^https?:\/\/[^/]+\/(zt|xw|xwzx|zw|zwgk|xxgk)\/[^/]+\/$/i.test(url)) {
         pendingSectionSeeds.add(url);
@@ -1030,13 +1690,11 @@ async function searchOneSiteStream({
       emit({
         type: "search_seed_hint",
         site: normalized,
-        pageUrl: normalized,
         seededCount: deepSectionSeeds.length,
-        seedSample: deepSectionSeeds.slice(0, 8),
       });
     }
 
-    while (queue.length > 0 && scannedPages < maxPages) {
+    while (queue.length > 0 && scannedPages < effectiveMaxPages) {
       if (shouldStop()) {
         break;
       }
@@ -1054,7 +1712,6 @@ async function searchOneSiteStream({
         site: normalized,
         scannedPages,
         queueSize: queue.length,
-        url: pageUrl,
       });
 
       try {
@@ -1065,35 +1722,22 @@ async function searchOneSiteStream({
         const $ = cheerio.load(html);
         discoverAliasHosts($, pageUrl, allowedHosts);
 
-        if (!searchBootstrapped && scannedPages <= 2) {
-          searchBootstrapped = true;
-          const seededLinks = await bootstrapLinksFromSiteSearch({
-            $,
-            pageUrl,
-            keyword,
-            allowedHosts,
-          });
-          for (let i = seededLinks.length - 1; i >= 0; i -= 1) {
-            const seeded = seededLinks[i];
-            if (visited.has(seeded) || queued.has(seeded)) {
-              continue;
-            }
-            queue.unshift(seeded);
-            queued.add(seeded);
-          }
-          if (seededLinks.length) {
-            emit({
-              type: "search_seed_hint",
-              site: normalized,
-              pageUrl,
-              seededCount: seededLinks.length,
-            });
-          }
-        }
-
         const mainContentMeta = extractMainContentMeta($);
         const keywordMatch = matchKeywordInBody(mainContentMeta, keyword, strictMode);
-        const hasKeyword = keywordMatch.matched;
+        const keywordTerms = getNormalizedKeywordTerms(keyword);
+        const title =
+          $("meta[property='og:title']").attr("content") ||
+          $("title").text().trim() ||
+          $("h1").first().text().trim() ||
+          "未识别标题";
+        const normalizedUrl = normalizePlainText(pageUrl);
+        const normalizedTitle = normalizePlainText(title);
+        const hasKeywordInUrl =
+          keywordTerms.length > 0 && keywordTerms.every((term) => normalizedUrl.includes(term));
+        const hasKeywordInTitle =
+          keywordTerms.length > 0 && keywordTerms.every((term) => normalizedTitle.includes(term));
+        // 标题或 URL 命中关键词时，直接视为关键词命中（严格模式同样生效）。
+        const hasKeyword = keywordMatch.matched || hasKeywordInUrl || hasKeywordInTitle;
         const isDetailPage = isLikelyDetailPage(
           pageUrl,
           mainContentMeta.text,
@@ -1101,33 +1745,30 @@ async function searchOneSiteStream({
         );
         const isListPage = isLikelyListPage($, pageUrl, mainContentMeta);
         const listHint = getListPageHint($, pageUrl, mainContentMeta);
-        const pageDate = extractPageDate($, html, pageUrl);
 
-        if (
-          hasKeyword &&
-          isDetailPage &&
-          !isListPage &&
-          isDateInRange(pageDate, startDate, endDate)
-        ) {
-          const title =
-            $("meta[property='og:title']").attr("content") ||
-            $("title").text().trim() ||
-            $("h1").first().text().trim() ||
-            "未识别标题";
-
-          matchedCount += 1;
-          emit({
-            type: "result",
-            item: {
-              site: normalized,
-              title,
-              url: pageUrl,
-              publishedAt: dayjs(pageDate).format("YYYY-MM-DD HH:mm:ss"),
-              snippet: buildHitSnippet(mainContentMeta, keyword, keywordMatch.matchedLine),
-            },
-            scannedPages,
-            matchedCount,
-          });
+        if (hasKeyword && isDetailPage && !isListPage && !isLikelySearchResultUrl(pageUrl)) {
+          const pageDate = extractPageDate($, html, pageUrl);
+          if (!isDateInRange(pageDate, startDate, endDate)) {
+            // 先关键词筛选，再在候选集中做日期匹配。
+            // 日期不满足时跳过结果返回，但保留后续链接扩展。
+          } else {
+            if (!emittedResultUrls.has(pageUrl)) {
+              emittedResultUrls.add(pageUrl);
+              matchedCount += 1;
+              emit({
+                type: "result",
+                item: {
+                  site: normalized,
+                  title,
+                  url: pageUrl,
+                  publishedAt: dayjs(pageDate).format("YYYY-MM-DD HH:mm:ss"),
+                  snippet: buildHitSnippet(mainContentMeta, keyword, keywordMatch.matchedLine),
+                },
+                scannedPages,
+                matchedCount,
+              });
+            }
+          }
         }
 
         const links = extractCandidateLinks($, pageUrl, allowedHosts, keyword);
@@ -1205,7 +1846,6 @@ async function searchOneSiteStream({
         emit({
           type: "page_error",
           site: normalized,
-          url: pageUrl,
           message: error.message,
         });
         continue;
@@ -1348,6 +1988,20 @@ app.post("/api/search-stream", async (req, res) => {
   return undefined;
 });
 
-app.listen(PORT, () => {
-  console.log(`Server running at http://localhost:${PORT}`);
+function openBrowser(port) {
+  const url = `http://127.0.0.1:${port}`;
+  const cmd =
+    process.platform === "win32"
+      ? `start "" "${url}"`
+      : process.platform === "darwin"
+        ? `open "${url}"`
+        : `xdg-open "${url}"`;
+  exec(cmd);
+}
+
+app.listen(PORT, "127.0.0.1", () => {
+  console.log(`Server running at http://127.0.0.1:${PORT}`);
+  if (process.pkg) {
+    openBrowser(PORT);
+  }
 });

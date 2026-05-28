@@ -3,110 +3,161 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>一键全站搜索</title>
+    <title>搜索小🐷手</title>
     <link rel="stylesheet" href="./styles.css" />
   </head>
   <body>
-    <main class="container">
-      <h1>一键全站搜索</h1>
-      <p class="sub">
-        导入多个网站（新闻/招聘/政府公开等），输入关键词和时间范围，按站点进行全站搜索并实时返回链接。
-      </p>
-
-      <section class="panel">
-        <label for="sitesInput">站点列表（每行一个 URL）</label>
-        <textarea
-          id="sitesInput"
-          placeholder="示例：&#10;https://news.sina.com.cn&#10;https://news.cctv.com"
-          rows="7"
-        ></textarea>
-
-        <div class="row">
-          <label for="xlsxFile">或导入 XLSX（首列填写站点 URL）</label>
-          <input id="xlsxFile" type="file" accept=".xlsx,.xls" />
-        </div>
+    <main class="page">
+      <section class="panel app-header">
+        <h1>
+          搜索小🐷手
+          <span class="title-tip">（⚠️⚠️⚠️注意：结果仅供参考使用⚠️⚠️⚠️）</span>
+        </h1>
+        <p class="sub">
+          导入多个网站（新闻/招聘/政府公开等），输入关键词和时间范围，按站点进行全站搜索并实时返回链接。
+        </p>
       </section>
 
-      <section class="panel">
-        <div class="grid">
-          <div>
-            <label for="keywordInput">关键词</label>
-            <input id="keywordInput" type="text" placeholder="例如：福建" />
-          </div>
-          <div>
-            <label for="daysInput">最近 N 天</label>
-            <input id="daysInput" type="number" min="1" value="7" />
-          </div>
-          <div>
-            <label for="maxPagesInput">单站最大扫描页数</label>
-            <input id="maxPagesInput" type="number" min="10" value="120" />
-          </div>
-          <div class="strict-mode-box">
-            <label for="strictModeInput">严格模式</label>
-            <label class="switch-line">
-              <input id="strictModeInput" type="checkbox" />
-              <span>仅正文段落匹配关键词（减少误报）</span>
-            </label>
-          </div>
-          <div>
-            <label for="startDate">开始日期</label>
-            <input id="startDate" type="date" />
-          </div>
-          <div>
-            <label for="endDate">结束日期</label>
-            <input id="endDate" type="date" />
-          </div>
-        </div>
-
-        <div class="btn-row">
-          <button id="applyDaysBtn" type="button">按最近 N 天填充日期</button>
-          <button id="searchBtn" type="button">搜索</button>
-          <button id="stopBtn" type="button" disabled>停止搜索</button>
-        </div>
-      </section>
-
-      <section class="panel" id="statusPanel">
-        <h2>状态</h2>
-        <div id="loadingBox" class="loading hidden">
-          <span class="spinner"></span>
-          <span id="loadingText">正在搜索中...</span>
-        </div>
-        <p id="statusText">等待搜索</p>
-      </section>
-
-      <section class="panel" id="resultPanel">
-        <h2>搜索结果</h2>
-        <p id="resultSummary">暂无结果</p>
-        <div class="result-tools">
-          <div class="tool-groups">
-            <div class="pager-size">
-              <label for="pageSizeSelect">每页显示</label>
-              <select id="pageSizeSelect">
-                <option value="10">10</option>
-                <option value="20" selected>20</option>
-                <option value="50">50</option>
-                <option value="100">100</option>
-              </select>
+      <section class="layout">
+        <aside class="sidebar">
+          <section class="panel">
+            <div class="tab-nav" role="tablist" aria-label="搜索与历史切换">
+              <button id="searchTabBtn" type="button" class="tab-btn active" role="tab" aria-selected="true">
+                💗开始搜索吧～
+              </button>
+              <button
+                id="historyTabBtn"
+                type="button"
+                class="tab-btn"
+                role="tab"
+                aria-selected="false"
+              >
+                ⏰历史记录
+              </button>
             </div>
-            <div class="export-scope">
-              <label for="exportScopeSelect">导出范围</label>
-              <select id="exportScopeSelect">
-                <option value="current">仅导出当前页</option>
-                <option value="all" selected>导出全部结果</option>
-              </select>
+
+            <div id="searchTabContent" class="tab-content">
+              <div class="block">
+                <h2>输入你要查询的网址</h2>
+                <p>可手动粘贴网址，或从 XLSX 批量导入。</p>
+                <label for="sitesInput">站点列表（每行一个地址，用换行分隔）</label>
+                <textarea
+                  id="sitesInput"
+                  placeholder="示例：&#10;https://news.sina.com.cn&#10;https://news.cctv.com"
+                  rows="8"
+                ></textarea>
+
+                <div class="row">
+                  <label for="xlsxFile">或导入 XLSX（首列填写站点 URL）</label>
+                  <input id="xlsxFile" type="file" accept=".xlsx,.xls" />
+                </div>
+              </div>
+
+              <div class="divider"></div>
+
+              <div class="top-action-row">
+                <button id="applyDaysBtn" type="button">按最近 N 天填充日期</button>
+                <button id="searchBtn" type="button">搜索</button>
+                <button id="stopBtn" type="button" disabled>停止搜索</button>
+              </div>
+
+              <div class="block">
+                <h2>搜索条件</h2>
+                <p>设置关键词、时间范围和扫描参数后开始搜索。</p>
+                <div class="grid">
+                  <div>
+                    <label for="keywordInput">关键词</label>
+                    <input id="keywordInput" type="text" placeholder="例如：福建" />
+                  </div>
+                  <div>
+                    <label for="daysInput">最近 N 天</label>
+                    <input id="daysInput" type="number" min="1" value="7" />
+                  </div>
+                  <div>
+                    <label for="maxPagesInput">单站最大扫描页数</label>
+                    <input id="maxPagesInput" type="number" min="10" value="120" />
+                  </div>
+                  <div class="strict-mode-box">
+                    <label for="strictModeInput">严格模式</label>
+                    <label class="switch-line">
+                      <input id="strictModeInput" type="checkbox" checked />
+                      <span>仅正文段落匹配关键词（减少误报）</span>
+                    </label>
+                  </div>
+                  <div>
+                    <label for="startDate">开始日期</label>
+                    <input id="startDate" type="date" />
+                  </div>
+                  <div>
+                    <label for="endDate">结束日期</label>
+                    <input id="endDate" type="date" />
+                  </div>
+                </div>
+              </div>
+
             </div>
-          </div>
-          <button id="exportBtn" type="button" disabled>导出 XLSX</button>
-        </div>
-        <ul id="resultList"></ul>
-        <div id="listHintPanel" class="list-hint-panel hidden">
-          <h3>列表页命中提示</h3>
-          <ul id="listHintList"></ul>
-        </div>
-        <div class="pager">
-          <button id="prevPageBtn" type="button" disabled>上一页</button>
-          <span id="pageInfo">第 1 / 1 页</span>
-          <button id="nextPageBtn" type="button" disabled>下一页</button>
+
+            <div id="historyTabContent" class="tab-content hidden">
+              <div class="history-head">
+                <h2>搜索历史</h2>
+                <button id="clearHistoryBtn" type="button" class="ghost-btn">清空历史</button>
+              </div>
+              <p class="history-tip">历史记录保存在本地浏览器，7 天后自动过期。</p>
+              <ul id="historyList" class="history-list"></ul>
+            </div>
+          </section>
+
+        </aside>
+
+        <div class="result-panel">
+          <section class="panel" id="statusPanel">
+            <h2>状态</h2>
+            <div id="loadingBox" class="loading hidden">
+              <span class="spinner"></span>
+              <span id="loadingText">正在搜索中...</span>
+            </div>
+            <p id="statusText" class="status-badge">等待搜索</p>
+          </section>
+
+          <section class="panel" id="resultPanel">
+            <h2>搜索结果</h2>
+            <p id="resultSummary">暂无结果</p>
+            <div id="siteNoticePanel" class="site-notice-panel hidden">
+              <h3>站点结果说明</h3>
+              <ul id="siteNoticeList"></ul>
+            </div>
+            <div class="result-tools">
+              <div class="tool-groups">
+                <div class="pager-size">
+                  <label for="pageSizeSelect">每页显示</label>
+                  <select id="pageSizeSelect">
+                    <option value="10">10</option>
+                    <option value="20" selected>20</option>
+                    <option value="50">50</option>
+                    <option value="100">100</option>
+                  </select>
+                </div>
+                <div class="export-scope">
+                  <label for="exportScopeSelect">导出范围</label>
+                  <select id="exportScopeSelect">
+                    <option value="current">仅导出当前页</option>
+                    <option value="all" selected>导出全部结果</option>
+                  </select>
+                </div>
+              </div>
+              <button id="exportBtn" type="button" disabled>导出 XLSX</button>
+            </div>
+            <ul id="resultList"></ul>
+            <div id="listHintPanel" class="list-hint-panel hidden">
+              <h3>列表页命中提示</h3>
+              <ul id="listHintList"></ul>
+            </div>
+            <div class="pager">
+              <button id="prevPageBtn" type="button" disabled>上一页</button>
+              <span id="pageInfo">第 1 / 1 页</span>
+              <button id="nextPageBtn" type="button" disabled>下一页</button>
+            </div>
+          </section>
         </div>
       </section>
     </main>
