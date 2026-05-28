@@ -10,6 +10,7 @@ on:
       - "package.json"
       - "package-lock.json"
       - ".github/workflows/build-exe.yml"
+      - "scripts/**"
 
 jobs:
   build:
@@ -27,8 +28,16 @@ jobs:
       - name: Build exe
         run: npm run build:exe
 
+      - name: Prepare release bundle
+        shell: cmd
+        run: |
+          mkdir dist\release
+          copy dist\one-click-news-search.exe dist\release\
+          xcopy /E /I /Y public dist\release\public
+          copy scripts\start-windows.bat dist\release\启动.bat
+
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: one-click-news-search-exe
-          path: dist/one-click-news-search.exe
+          name: one-click-news-search-win
+          path: dist/release/

@@ -4,10 +4,70 @@ const cheerio = require("cheerio");
 const dayjs = require("dayjs");
 const net = require("net");
 const path = require("path");
+const fs = require("fs");
+const readline = require("readline");
 const { exec } = require("child_process");
 
 const app = express();
-const PORT = process.env.PORT || 3000;
+const PORT = Number(process.env.PORT) || 3000;
+const HOST = process.env.HOST || "127.0.0.1";
+const LOG_FILE = path.join(
+  process.pkg ? path.dirname(process.execPath) : __dirname,
+  "one-click-news-search.log"
+);
+
+function writeLog(message) {
+  const line = `[${new Date().toISOString()}] ${message}`;
+  try {
+    fs.appendFileSync(LOG_FILE, `${line}\n`, "utf8");
+  } catch (error) {
+    // ignore log write errors
+  }
+  console.error(line);
+}
+
+function pauseBeforeExit(code = 1) {
+  if (!process.pkg || process.platform !== "win32") {
+    process.exit(code);
+    return;
+  }
+  writeLog(`进程即将退出，退出码 ${code}。日志文件：${LOG_FILE}`);
+  console.log(`\n若页面未打开，请查看日志：${LOG_FILE}`);
+  console.log("按 Enter 键退出...");
+  const rl = readline.createInterface({
+    input: process.stdin,
+    output: process.stdout,
+  });
+  rl.question("", () => {
+    rl.close();
+    process.exit(code);
+  });
+}
+
+process.on("uncaughtException", (error) => {
+  writeLog(`uncaughtException: ${error.stack || error.message || error}`);
+  pauseBeforeExit(1);
+});
+
+process.on("unhandledRejection", (reason) => {
+  writeLog(`unhandledRejection: ${reason?.stack || reason?.message || reason}`);
+  pauseBeforeExit(1);
+});
+
+function resolvePublicDir() {
+  const candidates = [
+    path.join(__dirname, "public"),
+    path.join(path.dirname(process.execPath), "public"),
+  ];
+  for (const dir of candidates) {
+    if (fs.existsSync(path.join(dir, "index.html"))) {
+      return dir;
+    }
+  }
+  return path.join(__dirname, "public");
+}
+
+const PUBLIC_DIR = resolvePublicDir();
 
 const REQUEST_TIMEOUT = 8000;
 const DEFAULT_MAX_PAGES_PER_SITE = 120;
@@ -133,7 +193,7 @@ const SPECIAL_SITE_SEARCH_FALLBACKS = {
 };
 
 app.use(express.json({ limit: "1mb" }));
-app.use(express.static(path.join(__dirname, "public")));
+app.use(express.static(PUBLIC_DIR));
 app.use((_, res, next) => {
   res.setHeader("X-Content-Type-Options", "nosniff");
   res.setHeader("X-Frame-Options", "DENY");
@@ -1992,16 +2052,31 @@ function openBrowser(port) {
   const url = `http://127.0.0.1:${port}`;
   const cmd =
     process.platform === "win32"
-      ? `start "" "${url}"`
+      ? `cmd /c start "" "${url}"`
       : process.platform === "darwin"
         ? `open "${url}"`
         : `xdg-open "${url}"`;
-  exec(cmd);
+  exec(cmd, (error) => {
+    if (error) {
+      writeLog(`openBrowser failed: ${error.message}`);
+    }
+  });
 }
 
-app.listen(PORT, "127.0.0.1", () => {
-  console.log(`Server running at http://127.0.0.1:${PORT}`);
+const server = app.listen(PORT, HOST, () => {
+  writeLog(`Server running at http://${HOST}:${PORT}`);
+  writeLog(`Public dir: ${PUBLIC_DIR}`);
+  console.log(`Server running at http://${HOST}:${PORT}`);
   if (process.pkg) {
-    openBrowser(PORT);
+    setTimeout(() => openBrowser(PORT), 800);
   }
+});
+
+server.on("error", (error) => {
+  if (error.code === "EADDRINUSE") {
+    writeLog(`端口 ${PORT} 已被占用，请关闭占用程序或设置环境变量 PORT。`);
+  } else {
+    writeLog(`server error: ${error.stack || error.message || error}`);
+  }
+  pauseBeforeExit(1);
 });

@@ -37,25 +37,43 @@ npm run build:exe
 
 Mac 无法直接交叉编译 Windows exe。把代码推到 **GitHub** 后，可在仓库 **Actions → Build Windows exe → Run workflow** 运行，完成后在 Artifacts 下载 exe。
 
-首次配置（使用原邮箱 `wxy9@meitu.com` 对应的 GitHub 账号）：
+**注意：** 美图 GitLab（`git.meitu.com`）和 GitHub（`github.com`）是两套 SSH，互不相通。
+
+首次配置 GitHub SSH（账号 `wxy9`，邮箱 `wxy9@meitu.com`）：
 
 ```bash
-# 1. 在 GitHub 新建空仓库 one-click-news-search（不要勾选 README）
-# 2. 生成 SSH 密钥（注释邮箱用原来的 wxy9@meitu.com）
-ssh-keygen -t ed25519 -C "wxy9@meitu.com" -f ~/.ssh/id_ed25519_github
+# 1. 复制本机公钥（与美图 Git 同一把 key 即可）
+cat ~/.ssh/id_ed25519.pub
 
-# 3. 把 ~/.ssh/id_ed25519_github.pub 添加到 GitHub → Settings → SSH keys
-# 4. 添加远程并推送（把 <你的GitHub用户名> 换成实际用户名）
-git remote add github git@github.com:<你的GitHub用户名>/one-click-news-search.git
+# 2. 打开 https://github.com/settings/keys → New SSH key → 粘贴公钥
+
+# 3. 验证（出现 Hi wxy9! 即成功）
+ssh -T git@github.com
+
+# 4. 推送到 GitHub（远程已配置为 wxy9/one-click-news-search）
 git push -u github main
 ```
 
+Push 成功后打开：https://github.com/wxy9/one-click-news-search/actions
+
 ### 使用 exe
+
+**请解压整个发布包，保持目录结构：**
+
+```
+one-click-news-search.exe
+public/
+启动.bat
+```
+
+推荐双击 **`启动.bat`** 运行（若 exe 闪退，窗口会停留并提示查看日志）。
 
 双击后会：
 
 1. 在本机 `127.0.0.1:3000` 启动服务
 2. 自动打开默认浏览器进入页面
+
+若仍闪退，查看同目录下的 `one-click-news-search.log`。
 
 说明：
 
