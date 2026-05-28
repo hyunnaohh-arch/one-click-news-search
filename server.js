@@ -1,3 +1,17 @@
+(function installWebPolyfills() {
+  try {
+    const { Blob, File } = require("node:buffer");
+    if (typeof globalThis.File === "undefined" && File) {
+      globalThis.File = File;
+    }
+    if (typeof globalThis.Blob === "undefined" && Blob) {
+      globalThis.Blob = Blob;
+    }
+  } catch (error) {
+    // pkg 旧运行时可能没有 node:buffer 里的 File，后面由 cheerio 降级路径处理
+  }
+})();
+
 const express = require("express");
 const axios = require("axios");
 const cheerio = require("cheerio");
