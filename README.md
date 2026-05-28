@@ -35,7 +35,20 @@ npm run build:exe
 
 ### 方式 B：Mac 上通过 GitHub Actions 自动打包
 
-Mac 无法直接交叉编译 Windows exe。若代码已推到 GitHub，可在仓库 **Actions → Build Windows exe → Run workflow** 运行，完成后在 Artifacts 下载 exe。
+Mac 无法直接交叉编译 Windows exe。把代码推到 **GitHub** 后，可在仓库 **Actions → Build Windows exe → Run workflow** 运行，完成后在 Artifacts 下载 exe。
+
+首次配置（使用原邮箱 `wxy9@meitu.com` 对应的 GitHub 账号）：
+
+```bash
+# 1. 在 GitHub 新建空仓库 one-click-news-search（不要勾选 README）
+# 2. 生成 SSH 密钥（注释邮箱用原来的 wxy9@meitu.com）
+ssh-keygen -t ed25519 -C "wxy9@meitu.com" -f ~/.ssh/id_ed25519_github
+
+# 3. 把 ~/.ssh/id_ed25519_github.pub 添加到 GitHub → Settings → SSH keys
+# 4. 添加远程并推送（把 <你的GitHub用户名> 换成实际用户名）
+git remote add github git@github.com:<你的GitHub用户名>/one-click-news-search.git
+git push -u github main
+```
 
 ### 使用 exe
 

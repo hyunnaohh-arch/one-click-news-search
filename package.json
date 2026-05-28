@@ -20,7 +20,7 @@
     "outputPath": "dist"
   },
   "keywords": [],
-  "author": "",
+  "author": "xianye.wu <wxy9@meitu.com>",
   "license": "ISC",
   "description": "One-click multi-site news search desktop app",
   "dependencies": {
